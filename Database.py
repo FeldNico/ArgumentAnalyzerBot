@@ -21,7 +21,7 @@ cur.execute("""CREATE TABLE IF NOT EXISTS CommentAnalysis (
     FOREIGN KEY (analysisCommentID) REFERENCES AnalysisContext(analysisCommentID)
 );""")
 
-def storeAnalysis(threadID,triggerCommentID, analysisCommentID, analysis):
+def storeAnalysis(original_comment, triggerCommentID, analysisCommentID, analysis):
     cur.execute("""
         INSERT OR IGNORE INTO AnalysisContext (
             analysisCommentID, 
@@ -30,7 +30,14 @@ def storeAnalysis(threadID,triggerCommentID, analysisCommentID, analysis):
             overall_summary, 
             overall_argument_type
         ) VALUES (?, ?, ?, ?, ?);
-    """, (analysisCommentID, triggerCommentID,threadID, analysis["overall_summary"],analysis["overall_argument_type"]))
+    """, (
+        analysisCommentID,
+        triggerCommentID,
+        original_comment.id,
+        analysis["overall_summary"],
+        analysis["overall_argument_type"]
+    ))
+
     if analysis['analysis_entries']:
         for entry in analysis['analysis_entries']:
             cur.execute("""

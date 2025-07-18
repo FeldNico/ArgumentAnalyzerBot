@@ -46,6 +46,10 @@ response_schema = {
                         "type": "string",
                         "description": "The Reddit username of the commenter."
                     },
+                    "comment_id": {
+                        "type": "string",
+                        "description": "The Reddit ID of the comment being analyzed."
+                    },
                     "comment_summary": {
                         "type": "string",
                         "description": "A brief summary of the comment's argument."
@@ -269,7 +273,7 @@ def run_bot_by_mentions():
                         comment_thread_for_analysis += "--- Comment Thread --- (Oldest to Newest, excluding trigger comment)\n"
                         for comment_ancestor in ancestor_comments:
                             author_name = comment_ancestor.author.name if comment_ancestor.author else '[Deleted User]'
-                            comment_thread_for_analysis += f"User ({author_name}): {comment_ancestor.body}\n---\n"
+                            comment_thread_for_analysis += f"Comment ID: {comment_ancestor.id}\nUser ({author_name}): {comment_ancestor.body}\n---\n"
                         comment_thread_for_analysis += "\n"
 
                     analysis_output = None
@@ -299,7 +303,7 @@ def run_bot_by_mentions():
                     try:
                         reply = item.reply(reply_text)
                         if analysis_output:
-                            storeAnalysis(original_post.id,item.id,reply.id,analysis_output)
+                            storeAnalysis(original_post,item.id,reply.id,analysis_output)
                         print(f"Replied to comment {item.id}")
                         #item.mark_read()
                     except praw.exceptions.RedditAPIException as e:
