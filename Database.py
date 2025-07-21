@@ -1,53 +1,205 @@
-import sqlite3
+import os
+from sqlcipher3 import dbapi2 as sqlite3
+from dotenv import load_dotenv
 
-con = sqlite3.connect("database.db")
-cur = con.cursor()
-cur.execute("""CREATE TABLE IF NOT EXISTS AnalysisContext (
-    analysisCommentID VARCHAR(255) PRIMARY KEY,                         -- The unique ID for this analysis case (defined by you, not auto-incremented)
-    triggerCommentID VARCHAR(255) NOT NULL,                             -- The ID of the comment that triggered the analysis
-    redditThreadID VARCHAR(255) NOT NULL,                      -- The ID of the overall Reddit thread/submission
-    overall_summary TEXT,                                      -- A new field for the summary of the entire interaction or thread
-    overall_argument_type VARCHAR(255)                         -- A new field for the main argument type of the overall interaction
-);""")
-cur.execute("""CREATE TABLE IF NOT EXISTS CommentAnalysis (
-    redditCommentID VARCHAR(255) PRIMARY KEY,                  -- The unique ID from Reddit for the specific comment being analysed
-    analysisCommentID VARCHAR(255) NOT NULL,                     -- Links to the context; must be unique to enforce a one-to-one relationship
-    author VARCHAR(255),                                       -- The username of the comment's author
-    comment_summary TEXT,                                      -- A summary of this specific comment
-    argument_type VARCHAR(255),                                -- The type of argument identified in this specific comment
-    fallacy_type VARCHAR(255),                                 -- The specific type of fallacy identified
-    flaw_description TEXT,                                     -- A detailed description of the logical flaw in this comment
-    
-    FOREIGN KEY (analysisCommentID) REFERENCES AnalysisContext(analysisCommentID)
-);""")
+load_dotenv()
+# It's crucial that this environment variable is set before running the script
+DB_PASSPHRASE = os.getenv("DB_PASSPHRASE")
 
-def storeAnalysis(original_comment, triggerCommentID, analysisCommentID, analysis):
-    cur.execute("""
-        INSERT OR IGNORE INTO AnalysisContext (
-            analysisCommentID, 
-            triggerCommentID, 
-            redditThreadID, 
-            overall_summary, 
-            overall_argument_type
-        ) VALUES (?, ?, ?, ?, ?);
-    """, (
-        analysisCommentID,
-        triggerCommentID,
-        original_comment.id,
-        analysis["overall_summary"],
-        analysis["overall_argument_type"]
-    ))
 
-    if analysis['analysis_entries']:
-        for entry in analysis['analysis_entries']:
-            cur.execute("""
-                INSERT OR IGNORE INTO CommentAnalysis (
-                    redditCommentID, 
-                    analysisCommentID, 
-                    author, 
-                    comment_summary, 
-                    argument_type, 
-                    fallacy_type, 
-                    flaw_description
-                ) VALUES (?, ?, ?, ?, ?, ?, ?);
-            """, ())
+# --- Helper function to get a database connection ---
+def get_db_connection():
+    """Establishes and returns a database connection with SQLCipher PRAGMAs."""
+    if not DB_PASSPHRASE:
+        raise ValueError("DB_PASSPHRASE environment variable is not set.")
+
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+
+    # PRAGMA key MUST be the first command executed on a new connection
+    # when opening an encrypted database.
+    cursor.execute(f"PRAGMA key='{DB_PASSPHRASE}';")
+
+    return conn
+
+
+# --- Database Initialization Function ---
+def init_db():  # Renamed to init_db for clarity, good practice
+    """Initializes database tables for AnalysisContext and CommentAnalysis."""
+    conn = None  # Initialize conn to None for finally block
+    try:
+        conn = get_db_connection()  # Use the helper function
+        cur = conn.cursor()
+
+        cur.execute("""CREATE TABLE IF NOT EXISTS AnalysisContext (
+            analysisCommentID VARCHAR(255) PRIMARY KEY,
+            triggerCommentID VARCHAR(255) NOT NULL,
+            redditThreadID VARCHAR(255) NOT NULL,
+            redditCommunity VARCHAR(255) NOT NULL, -- Correctly included in CREATE TABLE
+            overall_summary TEXT,
+            overall_argument_type VARCHAR(255)
+        );""")
+
+        cur.execute("""CREATE TABLE IF NOT EXISTS CommentAnalysis (
+            redditCommentID VARCHAR(255) PRIMARY KEY,
+            analysisCommentID VARCHAR(255) NOT NULL,
+            author VARCHAR(255),
+            comment_summary TEXT,
+            argument_type VARCHAR(255),
+            fallacy_type VARCHAR(255),
+            flaw_description TEXT,
+
+            FOREIGN KEY (analysisCommentID) REFERENCES AnalysisContext(analysisCommentID)
+        );""")
+        conn.commit()
+        print("Database tables initialized successfully.")
+    except Exception as e:
+        print(f"Error during database initialization: {e}")
+        # Optionally re-raise the exception if the bot cannot proceed without DB
+        # raise
+    finally:
+        if conn:
+            conn.close()  # Ensure connection is closed even if an error occurs
+
+
+# --- Function to Store Analysis ---
+def storeAnalysis(original_post, triggerCommentID, analysisCommentID, analysis):
+    """
+    Stores the overall analysis context and individual comment analyses.
+
+    Args:
+        original_post: The PRAW Submission object for the Reddit thread.
+        triggerCommentID: The ID of the comment that triggered the analysis.
+        analysisCommentID: A unique ID for this specific analysis instance.
+        analysis: The parsed JSON output from the Gemini API.
+    """
+    conn = None  # Initialize conn to None
+    try:
+        conn = get_db_connection()  # Get a new connection for this operation
+        cur = conn.cursor()
+
+        # Fix: Mismatch in INSERT statement for AnalysisContext
+        # Ensure column names match the VALUES and the number of placeholders
+        cur.execute("""
+            INSERT OR REPLACE INTO AnalysisContext (
+                analysisCommentID, 
+                triggerCommentID, 
+                redditThreadID, 
+                redditCommunity, -- Added this column to the INSERT list
+                overall_summary, 
+                overall_argument_type
+            ) VALUES (?, ?, ?, ?, ?, ?); -- Ensure 6 placeholders for 6 columns
+        """, (
+            analysisCommentID,
+            triggerCommentID,
+            original_post.id,  # This is the redditThreadID (Submission ID)
+            original_post.subreddit.display_name,  # Use display_name for community
+            analysis["overall_summary"],
+            analysis["overall_argument_type"]
+        ))
+
+        if analysis['analysis_entries']:
+            for entry in analysis['analysis_entries']:
+                # The 'fallacy_type' and 'flaw_description' might be None/empty strings if not a fallacy.
+                # SQLite handles None as NULL, which is fine for TEXT fields.
+                # Ensure author exists (not deleted) before getting name
+                author_name = entry["username"] if entry["username"] else '[Deleted User]'
+
+                cur.execute("""
+                    INSERT OR REPLACE INTO CommentAnalysis (
+                        redditCommentID, 
+                        analysisCommentID, 
+                        author, 
+                        comment_summary, 
+                        argument_type, 
+                        fallacy_type, 
+                        flaw_description
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    entry["comment_id"],  # Make sure your analysis_output provides this
+                    analysisCommentID,
+                    author_name,
+                    entry["comment_summary"],
+                    entry["argument_type"],
+                    entry.get("fallacy_type", None),  # Use .get() with default None for optional fields
+                    entry.get("flaw_description", None)  # Use .get() with default None for optional fields
+                ))
+
+        conn.commit()
+        print(f"Analysis '{analysisCommentID}' stored successfully.")
+    except Exception as e:
+        print(f"Error storing analysis '{analysisCommentID}': {e}")
+        # Consider logging the full traceback here for debugging: traceback.print_exc()
+        # Optionally rollback if only partial data was committed
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()  # Ensure connection is closed
+
+def get_user_analysis_history(username):
+    """
+    Retrieves all analysis entries for a given username,
+    joined with their corresponding AnalysisContext.
+
+    Args:
+        username (str): The Reddit username to query.
+
+    Returns:
+        list of dict: A list of dictionaries, where each dictionary represents
+                      a joined row of CommentAnalysis and AnalysisContext data
+                      for comments made by the specified user.
+                      Returns an empty list if no entries are found or on error.
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row # This allows access to columns by name
+        cur = conn.cursor()
+
+        # SQL JOIN query
+        # We select all columns from CommentAnalysis (ca) and relevant columns
+        # from AnalysisContext (ac) where the author matches the username
+        # and the analysisCommentID matches between the two tables.
+        cur.execute("""
+            SELECT
+                ca.redditCommentID,
+                ca.analysisCommentID,
+                ca.argument_type,
+                ca.fallacy_type,
+                ac.triggerCommentID,
+                ac.redditThreadID,
+                ac.redditCommunity,
+                ac.overall_argument_type AS context_overall_argument_type -- Alias
+            FROM
+                CommentAnalysis AS ca
+            JOIN
+                AnalysisContext AS ac ON ca.analysisCommentID = ac.analysisCommentID
+            WHERE
+                ca.author = ?
+            ORDER BY
+                ac.redditThreadID, ca.redditCommentID; -- Order for better readability
+        """, (username,))
+
+        # Fetch all results
+        rows = cur.fetchall()
+
+        # Convert rows to a list of dictionaries for easier use
+        for row in rows:
+            results.append(dict(row))
+
+    except Exception as e:
+        print(f"Error retrieving analysis history for user '{username}': {e}")
+        # In a real bot, you might log this error more formally
+    finally:
+        if conn:
+            conn.close()
+    return results
+
+if not DB_PASSPHRASE:
+    print("ERROR: DB_PASSPHRASE environment variable is not set.")
+else:
+    init_db()
+
+get_user_analysis_history("Cataract92")
