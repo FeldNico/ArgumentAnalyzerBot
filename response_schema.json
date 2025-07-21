@@ -1,0 +1,50 @@
+{
+    "type": "object",
+    "properties": {
+        "analysis_entries": {
+            "type": "array",
+            "description": "A list of individual argument analyses.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "description": "The Reddit username of the commenter."
+                    },
+                    "comment_id": {
+                        "type": "string",
+                        "description": "The Reddit ID of the comment being analyzed."
+                    },
+                    "comment_summary": {
+                        "type": "string",
+                        "description": "A brief summary of the comment's argument."
+                    },
+                    "argument_type": {
+                        "type": "string",
+                        "enum": ["valid_argument", "fallacy", "no_argument_found"],
+                        "description": "Classification of the argument in this comment."
+                    },
+                    "fallacy_type": {
+                        "type": "string",
+                        "description": "The specific name of the fallacy, if 'argument_type' is 'fallacy'. Empty otherwise."
+                    },
+                    "flaw_description": {
+                        "type": "string",
+                        "description": "Description of the fallacy or weakness, if any. Empty if valid or no argument."
+                    }
+                },
+                "required": ["username", "comment_summary", "argument_type"]
+            }
+        },
+        "overall_summary": {
+            "type": "string",
+            "description": "A concise overall summary of the argument quality in the entire thread."
+        },
+        "overall_argument_type": {
+            "type": "string",
+            "enum": ["valid_discussion", "fallacious_discussion", "mixed_discussion", "no_arguments_found"],
+            "description": "Overall classification of the entire discussion thread."
+        }
+    },
+    "required": ["analysis_entries", "overall_summary", "overall_argument_type"]
+}
