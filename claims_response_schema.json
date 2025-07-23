@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "properties": {
+    "claim_entries": {
+      "type": "array",
+      "description": "A list of individual claims.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "The Reddit username of the commenter."
+          },
+          "comment_id": {
+            "type": "string",
+            "description": "The Reddit ID of the comment being analyzed."
+          },
+          "claim": {
+            "type": "string",
+            "description": "Description of the fallacy or weakness, if any. Empty if valid or no argument."
+          },
+          "arguments_entries": {
+            "type": "array",
+            "description": "The arguments by the commenter used for backing up their claim.",
+            "items": {
+              "type": "string",
+              "description": "One single argument by the commenter used for backing up their claim."
+            }
+          }
+        },
+        "required": [
+          "username",
+          "comment_id",
+          "claim",
+          "arguments_entries"
+        ]
+      }
+    }
+  },
+  "required": [
+    "claim_entries"
+  ]
+}

@@ -45,11 +45,7 @@ class RedditBot:
 
         return path, parent
 
-    def performAnalysis(self,comment):
-        print(f"Bot triggered by comment: {comment.id} by {comment.author}")
-
-        ancestor_comments, original_post = self.get_ancestor_comments_and_post(comment)
-
+    def constructThreadPrompt(self,original_post,ancestor_comments):
         comment_thread_for_analysis = ""
         if original_post:
             comment_thread_for_analysis += f"--- Original Post ---\n"
@@ -66,6 +62,13 @@ class RedditBot:
                 author_name = comment_ancestor.author.name if comment_ancestor.author else '[Deleted User]'
                 comment_thread_for_analysis += f"Comment ID: {comment_ancestor.id}\nUser ({author_name}): {comment_ancestor.body}\n---\n"
             comment_thread_for_analysis += "\n"
+
+        return comment_thread_for_analysis
+
+    def performFallacyAnalysis(self, comment):
+        print(f"Bot triggered by comment: {comment.id} by {comment.author}")
+        ancestor_comments, original_post = self.get_ancestor_comments_and_post(comment)
+        comment_thread_for_analysis = self.constructThreadPrompt(original_post,ancestor_comments)
 
         analysis_output = None
         if not ancestor_comments and (not original_post.selftext and not original_post.title):
@@ -100,6 +103,22 @@ class RedditBot:
             print(f"Error replying to comment {comment.id}: {e}")
         except Exception as e:
             print(f"An unexpected error occurred while replying: {e}")
+
+
+
+    def performClaimAnalysis(self, comment):
+        print(f"Bot triggered by comment: {comment.id} by {comment.author}")
+        ancestor_comments, original_post = self.get_ancestor_comments_and_post(comment)
+        comment_thread_for_analysis = self.constructThreadPrompt(original_post, ancestor_comments)
+
+        analysis_output = None
+        if not ancestor_comments and (not original_post.selftext and not original_post.title):
+            reply_text = f"u/{comment.author}: It seems there are no parent comments or original post content for me to analyze in this thread. Please ensure the mention is in a comment that is part of a discussion you want analyzed."
+            print(reply_text)
+        else:
+            reply_text = self.GenAI.extract_claims_from_thread(comment_thread_for_analysis)
+
+        print(reply_text)
 
     def getStats(self, item, command_args):
         target_username = item.author.name  # Default to author of triggering comment
@@ -205,7 +224,9 @@ class RedditBot:
             print(f"Bot mentioned in comment {comment.id} by {comment.author} with command: {command} args: {command_args}")
 
             if command == "!analyze":
-                self.performAnalysis(comment)
+                self.performFallacyAnalysis(comment)
+            elif command == "!factcheck":
+                self.performClaimAnalysis(comment)
             elif command == "!stats":
                 self.getStats(comment,command_args)
             else:
