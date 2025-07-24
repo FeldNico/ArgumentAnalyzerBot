@@ -1,0 +1,104 @@
+{
+  "type": "object",
+  "properties": {
+    "fact_check_results": {
+      "type": "array",
+      "description": "A list of fact-checking results for individual claims.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "TRUE",
+              "FALSE",
+              "PARTIALLY_TRUE",
+              "UNPROVEN",
+              "DEBATED",
+              "INSUFFICIENT_INFORMATION"
+            ],
+            "description": "The overall verdict of the fact-check for the main claim."
+          },
+          "explanation": {
+            "type": "object",
+            "description": "A structured explanation of the fact-checking result.",
+            "properties": {
+              "claim_verdict_explanation": {
+                "type": "string",
+                "description": "A concise explanation for the overall claim's verdict, including inline citations like [1], [2] where sources are used."
+              },
+              "argument_evaluations": {
+                "type": "array",
+                "description": "Evaluations for each supporting argument.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "argument_text": {
+                      "type": "string",
+                      "description": "The text of the specific argument that was evaluated."
+                    },
+                    "argument_verdict": {
+                      "type": "string",
+                      "enum": [
+                        "TRUE",
+                        "FALSE",
+                        "PARTIALLY_TRUE",
+                        "UNPROVEN",
+                        "DEBATED",
+                        "NOT_APPLICABLE",
+                        "INSUFFICIENT_INFORMATION"
+                      ],
+                      "description": "The verdict for this specific argument."
+                    },
+                    "argument_explanation": {
+                      "type": "string",
+                      "description": "An explanation of the fact-check for this specific argument, with inline citations like [1], [2]."
+                    }
+                  },
+                  "required": [
+                    "argument_text",
+                    "argument_verdict",
+                    "argument_explanation"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "claim_verdict_explanation",
+              "argument_evaluations"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "description": "A list of web sources (titles and URLs) used to ground the fact-check. The order of sources here should match the numbering in the explanation.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "The title of the web page source."
+                },
+                "url": {
+                  "type": "string",
+                  "description": "The URL of the web source."
+                }
+              },
+              "required": [
+                "url",
+                "title"
+              ]
+            }
+          }
+        },
+        "required": [
+          "verdict",
+          "explanation",
+          "sources"
+        ]
+      }
+    }
+  },
+  "required": [
+    "fact_check_results"
+  ]
+}

@@ -116,7 +116,8 @@ class RedditBot:
             reply_text = f"u/{comment.author}: It seems there are no parent comments or original post content for me to analyze in this thread. Please ensure the mention is in a comment that is part of a discussion you want analyzed."
             print(reply_text)
         else:
-            reply_text = self.GenAI.extract_claims_from_thread(comment_thread_for_analysis)
+            claim_json = self.GenAI.extract_claims_from_thread(comment_thread_for_analysis)
+            reply_text = self.GenAI.factcheckClaims(claim_json)
 
         print(reply_text)
 
@@ -247,5 +248,5 @@ class RedditBot:
             elif isinstance(item, praw.models.Message):
                 self.handlePM(item)
 
-            item.mark_read()
+            #item.mark_read()
             time.sleep(1)

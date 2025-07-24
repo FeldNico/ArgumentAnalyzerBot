@@ -1,4 +1,6 @@
 import json
+import time
+from threading import Thread
 
 from google import genai
 from google.genai import types
@@ -12,16 +14,20 @@ class GenAI:
             self.fallacyPrompt = f.read()
         with open("claim_extraction_prompt.txt", 'r', encoding='utf-8') as f:
             self.claimPrompt = f.read()
+        with open("factcheck_prompt.txt", 'r', encoding='utf-8') as f:
+            self.factchecking_prompt = f.read()
         with open("fallacy_response_schema.json", 'r', encoding='utf-8') as f:
             self.fallacy_response_schema = json.load(f)
         with open("claims_response_schema.json", 'r', encoding='utf-8') as f:
             self.claim_response_schema = json.load(f)
+        with open("fact_check_output_schema.json", 'r', encoding='utf-8') as f:
+            self.factchecking_schema = json.load(f)
 
         self.groundingTool = types.Tool(
             google_search=types.GoogleSearch()
         )
 
-    def extract_claims_from_thread(self,comment_thread_text):
+    def extract_claims_from_thread(self, comment_thread_text):
         if not comment_thread_text.strip():
             # Return default structure if no text to analyze
             return {
@@ -30,6 +36,7 @@ class GenAI:
 
         try:
             # Construct the prompt for the Gemini model
+
             prompt_parts = [
                 self.claimPrompt,
                 f"Reddit Comment Thread for Analysis:\n\n{comment_thread_text}"
@@ -64,17 +71,18 @@ class GenAI:
                 "claim_entries": [],
             }
 
-    def factcheckClaims(self,claims):
+    def factcheckClaims(self, claims):
         if not claims or not claims.get('claim_entries'):
             return []
 
-        prompts_for_grounding = []
+        threads = []
+        responses = []
 
         for entry in claims['claim_entries']:
             username = entry.get('username', 'N/A')
             comment_id = entry.get('comment_id', 'N/A')
             claim = entry.get('claim', '')
-            arguments = entry.get('arguments', [])
+            arguments = entry.get('arguments_entries', [])
 
             if not claim:
                 continue  # Skip if claim is empty or invalid
@@ -83,24 +91,34 @@ class GenAI:
             # Emphasize factual verification, neutrality, and source citation.
             # Ensure the prompt is clear that it needs to *use* the search tool.
             fact_check_query_text = (
-                f"Fact-check the following claim and its supporting arguments based on real-world, verifiable information. "
-                f"Provide a concise verdict (e.g., TRUE, FALSE, PARTIALLY TRUE, UNPROVEN, DEBATED) with a brief explanation. "
-                f"**Crucially, cite all sources used from Google Search with inline citations.**\n\n"
-                f"Claim to fact-check: {claim}\n"
+                f"{self.factchecking_prompt}\n\n"+
+                f"Claim to fact-check: {claim}\n"+
                 f"Supporting arguments: {'; '.join(arguments) if arguments else 'None provided.'}\n\n"
-                f"Fact Check:"
             )
 
-            # Prepare the prompt structure for the Gemini API call
-            prompts_for_grounding.append( [
-                {"text": fact_check_query_text}
-            ])
+            def sendGroundingPrompts():
+                response = self.API.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=fact_check_query_text,
+                    config={
+                        "temperature": 0.0,
+                        "response_mime_type": "application/json",  # Request JSON output
+                        "response_schema": self.factchecking_schema,  # Provide the defined schema
+                    },
+                    # safety_settings=... # Optionally add safety settings if needed
+                )
+                responses.append(response)
 
+            t = Thread(target=sendGroundingPrompts)
+            threads.append(t)
+            t.start()
 
+        for t in threads:
+            t.join()
 
-        return prompts_for_grounding
+        return responses
 
-    def analyze_comment_thread_for_flaws(self,comment_thread_text):
+    def analyze_comment_thread_for_flaws(self, comment_thread_text):
         if not comment_thread_text.strip():
             # Return default structure if no text to analyze
             return {
